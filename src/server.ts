@@ -39,7 +39,10 @@ app.use(cors({
     // Permitir requests sin origin (Postman, apps móviles, etc.)
     if (!origin) return callback(null, true);
 
-    if (allowedOrigins.includes(origin)) {
+    // Permitir URLs de preview de Vercel (fronted-interplast-*.vercel.app)
+    const isVercelPreview = origin.match(/^https:\/\/fronted-interplast.*\.vercel\.app$/);
+
+    if (allowedOrigins.includes(origin) || isVercelPreview) {
       callback(null, true);
     } else {
       callback(new Error('No permitido por CORS'));

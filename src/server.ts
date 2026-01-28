@@ -10,8 +10,16 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
 import compression from 'compression';
+import { v2 as cloudinary } from 'cloudinary';
 
 dotenv.config();
+
+// ============= CLOUDINARY CONFIG =============
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -401,17 +409,33 @@ app.post('/api/admin/products/:id/images', auth, upload.single('image'), async (
     }
 
     // Comprimir y optimizar imagen con Sharp
-    // Acepta: JPEG, PNG, WebP, GIF, AVIF, TIFF, SVG
     const optimizedImage = await sharp(req.file.buffer)
       .resize(1000, 1000, {
         fit: 'inside',
         withoutEnlargement: true
       })
-      .webp({ quality: 75 }) // WebP es más eficiente, calidad 75 para buen balance
+      .webp({ quality: 80 })
       .toBuffer();
 
-    // Convertir a base64
-    const base64Image = `data:image/webp;base64,${optimizedImage.toString('base64')}`;
+    // Subir a Cloudinary
+    const uploadResult = await new Promise<any>((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'interplast/products',
+          resource_type: 'image',
+          format: 'webp',
+          transformation: [
+            { quality: 'auto:good' },
+            { fetch_format: 'auto' }
+          ]
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      uploadStream.end(optimizedImage);
+    });
 
     // Obtener el siguiente display_order
     const { data: existingImages } = await supabase
@@ -421,16 +445,17 @@ app.post('/api/admin/products/:id/images', auth, upload.single('image'), async (
       .order('display_order', { ascending: false })
       .limit(1);
 
-    const nextOrder = existingImages && existingImages.length > 0 
-      ? existingImages[0].display_order + 1 
+    const nextOrder = existingImages && existingImages.length > 0
+      ? existingImages[0].display_order + 1
       : 0;
 
-    // Guardar en base de datos
+    // Guardar URL de Cloudinary en base de datos
     const { data, error } = await supabase
       .from('product_images')
       .insert([{
         product_id: id,
-        url: base64Image,
+        url: uploadResult.secure_url,
+        cloudinary_public_id: uploadResult.public_id,
         display_order: nextOrder
       }])
       .select()
@@ -449,6 +474,19 @@ app.delete('/api/admin/products/:productId/images/:imageId', auth, async (req: A
   try {
     const { imageId } = req.params;
 
+    // Obtener la imagen para conseguir el public_id de Cloudinary
+    const { data: image } = await supabase
+      .from('product_images')
+      .select('cloudinary_public_id')
+      .eq('id', imageId)
+      .single();
+
+    // Si tiene public_id, eliminar de Cloudinary
+    if (image?.cloudinary_public_id) {
+      await cloudinary.uploader.destroy(image.cloudinary_public_id);
+    }
+
+    // Eliminar de la base de datos
     const { error } = await supabase
       .from('product_images')
       .delete()

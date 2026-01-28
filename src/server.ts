@@ -25,8 +25,25 @@ const supabase = createClient(
 
 // ============= MIDDLEWARE =============
 app.use(helmet());
+
+// CORS: Permitir múltiples orígenes (desarrollo y producción)
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.FRONTEND_URL
+].filter(Boolean) as string[];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Permitir requests sin origin (Postman, apps móviles, etc.)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('No permitido por CORS'));
+    }
+  },
   credentials: true
 }));
 app.use(compression());
@@ -94,16 +111,71 @@ app.get('/api/products', async (req, res) => {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    
+
     // Ordenar imágenes por display_order
     const productsWithSortedImages = data?.map(p => ({
       ...p,
       images: p.images?.sort((a: any, b: any) => a.display_order - b.display_order) || []
     }));
-    
+
     res.json(productsWithSortedImages || []);
   } catch (error: any) {
     console.error('Error fetching products:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET: Productos próximamente (is_featured = true)
+// IMPORTANTE: Rutas específicas ANTES de rutas con parámetros
+app.get('/api/products/coming-soon', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select(`
+        *,
+        category:categories(id, name, slug, icon, color),
+        brand:brands(id, name, slug),
+        images:product_images(id, url, display_order)
+      `)
+      .eq('is_featured', true)
+      .order('name', { ascending: true });
+
+    if (error) throw error;
+
+    const productsWithSortedImages = data?.map(p => ({
+      ...p,
+      images: p.images?.sort((a: any, b: any) => a.display_order - b.display_order) || []
+    }));
+
+    res.json(productsWithSortedImages || []);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET: Productos novedades (is_new = true)
+app.get('/api/products/new', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select(`
+        *,
+        category:categories(id, name, slug, icon, color),
+        brand:brands(id, name, slug),
+        images:product_images(id, url, display_order)
+      `)
+      .eq('is_new', true)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    const productsWithSortedImages = data?.map(p => ({
+      ...p,
+      images: p.images?.sort((a: any, b: any) => a.display_order - b.display_order) || []
+    }));
+
+    res.json(productsWithSortedImages || []);
+  } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
@@ -160,60 +232,6 @@ app.get('/api/brands', async (req, res) => {
 
     if (error) throw error;
     res.json(data || []);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET: Productos próximamente (is_featured = true)
-app.get('/api/products/coming-soon', async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('products')
-      .select(`
-        *,
-        category:categories(id, name, slug, icon, color),
-        brand:brands(id, name, slug),
-        images:product_images(id, url, display_order)
-      `)
-      .eq('is_featured', true)
-      .order('name', { ascending: true });
-
-    if (error) throw error;
-
-    const productsWithSortedImages = data?.map(p => ({
-      ...p,
-      images: p.images?.sort((a: any, b: any) => a.display_order - b.display_order) || []
-    }));
-
-    res.json(productsWithSortedImages || []);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// GET: Productos novedades (is_new = true)
-app.get('/api/products/new', async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('products')
-      .select(`
-        *,
-        category:categories(id, name, slug, icon, color),
-        brand:brands(id, name, slug),
-        images:product_images(id, url, display_order)
-      `)
-      .eq('is_new', true)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    const productsWithSortedImages = data?.map(p => ({
-      ...p,
-      images: p.images?.sort((a: any, b: any) => a.display_order - b.display_order) || []
-    }));
-
-    res.json(productsWithSortedImages || []);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

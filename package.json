@@ -9,7 +9,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "script:colgadores": "tsx scripts/add-colgadores-category.ts"
   },
   "dependencies": {
     "@cloudinary/react": "^1.14.3",

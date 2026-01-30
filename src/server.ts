@@ -321,11 +321,14 @@ app.post('/api/admin/login', async (req, res) => {
 app.post('/api/admin/products', auth, async (req: AuthRequest, res) => {
   try {
     const productData = req.body;
-    
+
     // Validar campos requeridos
     if (!productData.code || !productData.name || !productData.category_id) {
       return res.status(400).json({ error: 'Campos obligatorios faltantes' });
     }
+
+    // Convertir strings vacíos a null para campos UUID opcionales
+    if (productData.brand_id === '') productData.brand_id = null;
 
     // Generar slug
     productData.slug = productData.name
@@ -352,6 +355,10 @@ app.put('/api/admin/products/:id', auth, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
     const productData = req.body;
+
+    // Convertir strings vacíos a null para campos UUID opcionales
+    if (productData.brand_id === '') productData.brand_id = null;
+    if (productData.category_id === '') productData.category_id = null;
 
     // Regenerar slug si cambia el nombre
     if (productData.name) {

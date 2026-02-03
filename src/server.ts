@@ -5,7 +5,6 @@ import { createClient } from '@supabase/supabase-js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
-import sharp from 'sharp';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
@@ -415,33 +414,33 @@ app.post('/api/admin/products/:id/images', auth, upload.single('image'), async (
       return res.status(400).json({ error: 'No se permiten archivos de video' });
     }
 
-    // Comprimir y optimizar imagen con Sharp
-    const optimizedImage = await sharp(req.file.buffer)
-      .resize(1000, 1000, {
-        fit: 'inside',
-        withoutEnlargement: true
-      })
-      .webp({ quality: 80 })
-      .toBuffer();
+    // Subir a Cloudinary - Cloudinary maneja toda la optimización
+    console.log('Uploading image to Cloudinary:', req.file.originalname, req.file.mimetype, req.file.size);
 
-    // Subir a Cloudinary
     const uploadResult = await new Promise<any>((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder: 'interplast/products',
           resource_type: 'image',
-          format: 'webp',
-          transformation: [
-            { quality: 'auto:good' },
-            { fetch_format: 'auto' }
-          ]
+          transformation: {
+            width: 1000,
+            height: 1000,
+            crop: 'limit',
+            quality: 'auto:good',
+            format: 'webp'
+          }
         },
         (error, result) => {
-          if (error) reject(error);
-          else resolve(result);
+          if (error) {
+            console.error('Cloudinary upload error:', error);
+            reject(error);
+          } else {
+            console.log('Cloudinary upload success:', result?.public_id);
+            resolve(result);
+          }
         }
       );
-      uploadStream.end(optimizedImage);
+      uploadStream.end(req.file!.buffer);
     });
 
     // Obtener el siguiente display_order
@@ -462,7 +461,6 @@ app.post('/api/admin/products/:id/images', auth, upload.single('image'), async (
       .insert([{
         product_id: id,
         url: uploadResult.secure_url,
-        cloudinary_public_id: uploadResult.public_id,
         display_order: nextOrder
       }])
       .select()
@@ -480,18 +478,6 @@ app.post('/api/admin/products/:id/images', auth, upload.single('image'), async (
 app.delete('/api/admin/products/:productId/images/:imageId', auth, async (req: AuthRequest, res) => {
   try {
     const { imageId } = req.params;
-
-    // Obtener la imagen para conseguir el public_id de Cloudinary
-    const { data: image } = await supabase
-      .from('product_images')
-      .select('cloudinary_public_id')
-      .eq('id', imageId)
-      .single();
-
-    // Si tiene public_id, eliminar de Cloudinary
-    if (image?.cloudinary_public_id) {
-      await cloudinary.uploader.destroy(image.cloudinary_public_id);
-    }
 
     // Eliminar de la base de datos
     const { error } = await supabase

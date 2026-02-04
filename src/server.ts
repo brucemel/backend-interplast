@@ -938,6 +938,60 @@ app.delete('/api/admin/categories/:id', validateUUID('id'), auth, async (req: Au
   }
 });
 
+// POST: Subir imagen de categoría
+app.post('/api/admin/categories/:id/image', validateUUID('id'), auth, upload.single('image'), async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se recibió ninguna imagen' });
+    }
+
+    // Subir a Cloudinary
+    console.log('Uploading category image to Cloudinary:', req.file.originalname);
+
+    const uploadResult = await new Promise<any>((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'interplast/categories',
+          resource_type: 'image',
+          transformation: {
+            width: 500,
+            height: 500,
+            crop: 'limit',
+            quality: 'auto:good',
+            format: 'webp'
+          }
+        },
+        (error, result) => {
+          if (error) {
+            console.error('Cloudinary upload error:', error);
+            reject(error);
+          } else {
+            console.log('Cloudinary upload success:', result?.public_id);
+            resolve(result);
+          }
+        }
+      );
+      uploadStream.end(req.file!.buffer);
+    });
+
+    // Actualizar categoría con la URL de la imagen
+    const { data, error } = await supabase
+      .from('categories')
+      .update({ image_url: uploadResult.secure_url })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json(data);
+  } catch (error: any) {
+    console.error('Error uploading category image:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // POST: Crear marca
 app.post('/api/admin/brands', auth, async (req: AuthRequest, res) => {
   try {
